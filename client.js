@@ -8,7 +8,7 @@ var path    = require('path');  // This is so we don't have to specify the full 
 
 var config_file = require(__dirname + "/" + "config.json");
 
-var last_channel_message = "";
+var message_queue_array = new Array(0);
 
 //--------------------------------------------------------------
 
@@ -34,8 +34,10 @@ app.get('/config_file', function(req,res) {
 
 // This returns the last channel message whenever called, or blank for none.
 app.get('/last_channel_message', function(req,res) {
-  res.json({"lastChannelMessage": last_channel_message});
-  last_channel_message = "";
+  if (message_queue_array.length > 0)
+    res.json({"lastChannelMessage": message_queue_array.shift()});
+  else
+    res.json({"lastChannelMessage": ""});
   });
 
 // This sends a message to the channel.
@@ -43,7 +45,7 @@ app.get('/send_channel_message', function(req,res) {
   var message_to_send = req.param('message');
   console.log("Sending to server: " + message_to_send);
   irc_client.say(config_file.ircChannel, message_to_send);
-  res.end("OK");
+  res.json({"status": "OK"});
 });
 
 //-----------------------------------------------------------
@@ -67,7 +69,7 @@ irc_client.addListener('message', function(from, to, message) {
 
     if (to.match(/^[#&]/)) {
         // channel message
-        last_channel_message = message;
+        message_queue_array.push(from + ": " + message);
     }
     else {
         // private message
