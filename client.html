@@ -1,0 +1,45 @@
+<HTML> 
+<HEAD>
+<TITLE>Alton's Node_IRC_Client</TITLE>
+</HEAD>
+<BODY>
+<CENTER><H3>Alton's Node IRC Client</H3></CENTER>
+
+<SCRIPT>
+var Httpreq = new XMLHttpRequest();   
+Httpreq.open("GET","/config_file",false);
+Httpreq.send(null);
+var config_file = JSON.parse(Httpreq.responseText);
+//
+
+document.write('<P><TEXTAREA STYLE="font-size:10px" ID="output_area" ROWS="' + config_file.displayRows    + '" COLS="' + config_file.displayColumns + '"> </TEXTAREA>                               </P>');
+document.write('<P><INPUT    STYLE="font-size:11px" ID="input_area"  SIZE="' + config_file.displayColumns + '" ONFOCUS="this.value=\'\'" ONBLUR="sendChannelMessage()" VALUE="Enter message here."> </P>');
+
+var sendChannelMessage = function() {
+    var message = document.getElementById('input_area').value;
+    document.getElementById('input_area').value = "";
+    console.log("Sending message: " + message);
+    var Httpreq = new XMLHttpRequest();
+    Httpreq.open("GET","/send_channel_message?message=" + message, false);  // This is URL-encoded, fortunately.
+    Httpreq.send(null);
+    console.log("*" + Httpreq.responseText + "*");
+}
+
+var screenUpdate = function() {
+    var Httpreq = new XMLHttpRequest();   
+    Httpreq.open("GET","/last_channel_message",false);
+    Httpreq.send(null);
+    var data_from_server = JSON.parse(Httpreq.responseText);
+    if (data_from_server.lastChannelMessage != "") {
+        document.getElementById('output_area').value = data_from_server.lastChannelMessage;
+        }
+    setTimeout (function() { screenUpdate(); }, 1000);  // Poll the Node server and update the screen every second.
+}
+
+window.onload = function() {
+    setTimeout (function() { screenUpdate(); }, 1000);  // Poll the Node server and update the screen every second.
+}
+</SCRIPT>
+
+</BODY>
+</HTML>
