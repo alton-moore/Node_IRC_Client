@@ -14,48 +14,76 @@ var config_file = JSON.parse(Httpreq.responseText);
 // Write out the text (display) area and the input box.
 document.write('<P><TEXTAREA STYLE="overflow-y: scroll; font-size:' + config_file.displayFontSize + 'px" ID="output_area" ROWS="' + config_file.displayRows    + '" COLS="' + config_file.displayColumns + '"> </TEXTAREA> </P>');
 document.write('<P><FORM ONSUBMIT="sendChannelMessage(); return false;" >');
-document.write('    <INPUT    STYLE="font-size:' + config_file.inputFontSize + 'px" ID="input_area" ONBLUR="sendChannelMessage();" SIZE="' + config_file.displayColumns + '" />');
+document.write('    <INPUT    STYLE="font-size:' + config_file.inputFontSize + 'px" ID="input_area" SIZE="' + config_file.displayColumns + '" />');
 document.write('    <INPUT TYPE="submit" VALUE="Send"></FORM></P>');
 
 // So we don't have to keep looking this up.
 input_area  = document.getElementById('input_area' );
 output_area = document.getElementById('output_area');
 
-// Initialize the area so next text appears at the bottom.
-//for (var i=0; config_file.displayRows > i; i++)  // '>' used to quiet my language-sensitive editor.
-//    output_area.value += '\n';
-    output_area_value = "";
+// Initialize the area so next text appears at the bottom of the output area.
+var clearOutputArea = function() {
+    output_area.value = "";
+    for (var i=0; config_file.displayRows > i; i++)  // '>' used to quiet my language-sensitive editor.
+        output_area.value += '\n';
+    output_area.scrollTop = output_area.scrollHeight;
+}
 
+// Nickname will be obtained from the input box until it is set and accepted by the server.
+var nickname = "";
+clearOutputArea();
+output_area.value += "Please enter your nickname below.\n";
+output_area.scrollTop = output_area.scrollHeight;
 
 var sendChannelMessage = function() {
     var message_to_send = input_area.value;
     input_area.value = "";  // Blank out the input box.
-    console.log("Sending message: " + message_to_send);
-    var Httpreq = new XMLHttpRequest();
-    Httpreq.open("GET","/send_channel_message?message=" + message_to_send, false);  // This is URL-encoded, fortunately.
-    Httpreq.send(null);
-    console.log(         "(self): " + message_to_send);
-    output_area.value += "(self): " + message_to_send + "\n";
-    output_area.scrollTop = output_area.scrollHeight;
+    if (nickname == "") {  // If the nickname hasn't been set yet, then use any input from this box to do it.
+        nickname = message_to_send;
+        var Httpreq = new XMLHttpRequest();
+        Httpreq.open("GET","/connect?nickname=" + nickname, false);
+        Httpreq.send(null);
+        clearOutputArea();
+        message_to_send = "";  // No need to send anything else at this point.
+    }
+    if (message_to_send != "") {
+        var Httpreq = new XMLHttpRequest();
+        Httpreq.open("GET","/send_channel_message?message=" + message_to_send, false);  // This is URL-encoded, fortunately.
+        Httpreq.send(null);
+        output_area.value += "(self): " + message_to_send + "\n";
+        output_area.scrollTop = output_area.scrollHeight;
+    }
     input_area.focus();
 }
 
+var pingNodeServer = function() {
+    var Httpreq = new XMLHttpRequest();
+    Httpreq.open("GET","/ping",false);
+    Httpreq.send(null);
+    setTimeout (function() { pingNodeServer(); }, 30000);  // Repeat this every 30 seconds.
+}
+
 var screenUpdate = function() {
-    var Httpreq = new XMLHttpRequest();   
+    var Httpreq = new XMLHttpRequest();
     Httpreq.open("GET","/last_channel_message",false);
     Httpreq.send(null);
     var data_from_server = JSON.parse(Httpreq.responseText);
-    if (data_from_server.lastChannelMessage != "") {
-        console.log(data_from_server.lastChannelMessage);
+    while (data_from_server.lastChannelMessage != "") {
+        //console.log(data_from_server.lastChannelMessage);
         output_area.value += data_from_server.lastChannelMessage + "\n";
         output_area.scrollTop = output_area.scrollHeight;
+        var Httpreq = new XMLHttpRequest();  // Try again immediately, in case there are more messages.
+        Httpreq.open("GET","/last_channel_message",false);
+        Httpreq.send(null);
+        data_from_server = JSON.parse(Httpreq.responseText);
         }
     setTimeout (function() { screenUpdate(); }, 1000);  // Poll the Node server and update the screen every second.
 }
 
 window.onload = function() {
     input_area.focus();
-    setTimeout (function() { screenUpdate(); }, 1000);  // Poll the Node server and update the screen every second.
+    setTimeout (function() { pingNodeServer(); }, 30000);  // Ping the Node server so it can detect if we've died and gone away.
+    setTimeout (function() { screenUpdate();   },  1000);  // Poll the Node server and update the screen every second.
 }
 </SCRIPT>
 

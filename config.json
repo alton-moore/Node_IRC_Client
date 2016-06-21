@@ -4,7 +4,6 @@
 "description"     : "Settings needed for IRC client to connect to a single channel on a single server",
 "port"            : "8081",
 "ircServer"       : "irc.alton-moore.net",
-"nickname"        : "AltonNode",
 "ircChannel"      : "#alton",
 "displayRows"     : "10",
 "displayColumns"  : "80",
