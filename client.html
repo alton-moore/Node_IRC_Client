@@ -6,6 +6,10 @@
 <CENTER><H3>Alton's Node IRC Client</H3></CENTER>
 
 <SCRIPT>
+
+var session_id = "";
+
+// Load the config file up so we can use a few of its fields.
 var Httpreq = new XMLHttpRequest();   
 Httpreq.open("GET","/config_file",false);
 Httpreq.send(null);
@@ -41,14 +45,15 @@ var sendChannelMessage = function() {
     if (nickname == "") {  // If the nickname hasn't been set yet, then use any input from this box to do it.
         nickname = message_to_send;
         var Httpreq = new XMLHttpRequest();
-        Httpreq.open("GET","/connect?nickname=" + nickname, false);
+        Httpreq.open("GET","/connect?session_id=" + session_id + "&nickname=" + nickname, false);
         Httpreq.send(null);
         clearOutputArea();
+        output_area.value += "Using nickname " + nickname + "\n";
         message_to_send = "";  // No need to send anything else at this point.
     }
     if (message_to_send != "") {
         var Httpreq = new XMLHttpRequest();
-        Httpreq.open("GET","/send_channel_message?message=" + message_to_send, false);  // This is URL-encoded, fortunately.
+        Httpreq.open("GET","/send_channel_message?session_id=" + session_id + "&message=" + message_to_send, false);  // This is URL-encoded, fortunately.
         Httpreq.send(null);
         output_area.value += "(self): " + message_to_send + "\n";
         output_area.scrollTop = output_area.scrollHeight;
@@ -58,14 +63,14 @@ var sendChannelMessage = function() {
 
 var pingNodeServer = function() {
     var Httpreq = new XMLHttpRequest();
-    Httpreq.open("GET","/ping",false);
+    Httpreq.open("GET","/ping?session_id=" + session_id, false);
     Httpreq.send(null);
     setTimeout (function() { pingNodeServer(); }, 30000);  // Repeat this every 30 seconds.
 }
 
 var screenUpdate = function() {
     var Httpreq = new XMLHttpRequest();
-    Httpreq.open("GET","/last_channel_message",false);
+    Httpreq.open("GET","/last_channel_message?session_id=" + session_id,false);
     Httpreq.send(null);
     var data_from_server = JSON.parse(Httpreq.responseText);
     while (data_from_server.lastChannelMessage != "") {
@@ -73,7 +78,7 @@ var screenUpdate = function() {
         output_area.value += data_from_server.lastChannelMessage + "\n";
         output_area.scrollTop = output_area.scrollHeight;
         var Httpreq = new XMLHttpRequest();  // Try again immediately, in case there are more messages.
-        Httpreq.open("GET","/last_channel_message",false);
+        Httpreq.open("GET","/last_channel_message?session_id=" + session_id,false);
         Httpreq.send(null);
         data_from_server = JSON.parse(Httpreq.responseText);
         }
@@ -81,6 +86,15 @@ var screenUpdate = function() {
 }
 
 window.onload = function() {
+    //
+    // First get the session ID for ourselves.  This is not super high security, but ok enough for a chat.
+    var Httpreq = new XMLHttpRequest();
+    Httpreq.open("GET","/session_id",false);
+    Httpreq.send(null);
+    var data_from_server = JSON.parse(Httpreq.responseText);
+    session_id = data_from_server.sessionId;
+    console.log("Got session ID: " + session_id);
+    //
     input_area.focus();
     setTimeout (function() { pingNodeServer(); }, 30000);  // Ping the Node server so it can detect if we've died and gone away.
     setTimeout (function() { screenUpdate();   },  1000);  // Poll the Node server and update the screen every second.
