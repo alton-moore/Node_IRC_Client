@@ -11,7 +11,6 @@ var session_id_array    = new Array(0);
 var ping_times_array    = new Array(0);
 var irc_handles_array   = new Array(0);
 var message_queue_array = new Array(0);  // Entries here will also be arrays.
-var add_listeners_flag = 0;
 
 //--------------------------------------------------------------
 
@@ -19,6 +18,22 @@ var add_listeners_flag = 0;
 app.listen(config_file.port,function() {
   console.log("Server started on port " + config_file.port);
 });
+
+var checkPings = function() {
+    // Because each routine should be atomic, we can both check and clean the arrays here without worry.
+    console.log("Checking " + session_id_array.length + " sessions for ping timeouts.");
+    for (i=0; i < session_id_array.length; i++) {
+        while ((i < session_id_array.length) && ((new Date().getTime() / 1000) - ping_times_array[i] > 75)) {
+            console.log("  Ping timeout for session ID: " + session_id_array[i] + " -- Removing from arrays.");
+            session_id_array.splice(i,1);
+            ping_times_array.splice(i,1);
+            irc_handles_array.splice(i,1);
+            message_queue_array.splice(i,1);
+        }
+    }
+    setTimeout (function() { checkPings(); }, 10000);  // Repeat this every 10 seconds.
+}
+setTimeout (function() { checkPings(); }, 10000);  // Repeat this every 10 seconds.
 
 //-----------------------------------------------------------
 // Subroutines
@@ -44,6 +59,7 @@ app.get('/session_id', function(req,res) {
   //  session_id = Math.random();  // Collision unlikely, but put the above check back in soon.
   session_id_array.push(session_id);  // Create the entry for this browser connection.  Later we should see about reusing old entries.
   ping_times_array[session_id_array.indexOf(session_id)] = new Date().getTime() / 1000;
+  message_queue_array[session_id_array.indexOf(session_id)] = new Array(0);
   console.log("Assigned session ID: " + session_id);
   res.json({"sessionId": session_id});
 });
