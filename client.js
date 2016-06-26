@@ -55,8 +55,8 @@ app.get('/',function(req,res) {
 // Return a session ID to the browser for use in future requests.
 app.get('/session_id', function(req,res) {
   var session_id = Math.random() + "";
-  //while (session_id_array.indexOf(session_id) > -1)
-  //  session_id = Math.random();  // Collision unlikely, but put the above check back in soon.
+  while (session_id_array.indexOf(session_id) > -1)  // Seesion ID already on file in array?
+    session_id = Math.random();  // Collision unlikely, but put the above check back in soon.
   session_id_array.push(session_id);  // Create the entry for this browser connection.  Later we should see about reusing old entries.
   ping_times_array[session_id_array.indexOf(session_id)] = new Date().getTime() / 1000;
   message_queue_array[session_id_array.indexOf(session_id)] = new Array(0);
@@ -75,7 +75,7 @@ app.get('/last_channel_message', function(req,res) {
   var session_id = req.param('session_id') + "";
   var message_to_return = "";
   //console.log("Checking message queue for session " + session_id);
-  if (typeof(message_queue_array[session_id_array.indexOf(session_id)]) == "undefined") {
+  if (typeof(message_queue_array[session_id_array.indexOf(session_id)]) == "undefined") {  // This if statement can probably be taken out soon.
     console.log("message_queue_array entry undefined, so returning blank message.");
   }
   else {
@@ -100,7 +100,8 @@ app.get('/send_channel_message', function(req,res) {
   var session_id      = req.param('session_id') + "";
   var message_to_send = req.param('message'   );
   console.log("Sending to server: " + message_to_send);
-  irc_handles_array[session_id_array.indexOf(session_id)].say(config_file.ircChannel, message_to_send);
+  if (session_id_array.indexOf(session_id) > -1)  // Valid session ID passed to us?  This is mainly a security check, in case anyone writes directly to this endpoint.
+      irc_handles_array[session_id_array.indexOf(session_id)].say(config_file.ircChannel, message_to_send);
   res.json({"status": "OK"});
 });
 
@@ -110,8 +111,7 @@ app.get('/connect', function(req,res) {
   var nickname   = req.param('nickname'  );
   console.log("Connecting to server " + config_file.ircServer + " with nickname " + nickname);
   irc_handles_array[session_id_array.indexOf(session_id)] = new irc.Client(config_file.ircServer, nickname, { debug: true, channels: [config_file.ircChannel] });
-  push_to_message_queue_array(session_id, "Connected to " + config_file.ircServer  + " now."    );
-  push_to_message_queue_array(session_id, "Joining the "  + config_file.ircChannel + " channel.");
+  push_to_message_queue_array(session_id, "Connected to server " + config_file.ircServer  + ", channel " + config_file.ircChannel);
   irc_handles_array[session_id_array.indexOf(session_id)].addListener('error', function(message) {
       console.error('ERROR: %s: %s', message.command, message.args.join(' '));
   });
