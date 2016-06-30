@@ -8,6 +8,7 @@
 <SCRIPT>
 
 var session_id = "";
+var nickname = "";
 
 // Load the config file up so we can use a few of its fields.
 var Httpreq = new XMLHttpRequest();   
@@ -33,11 +34,14 @@ var clearOutputArea = function() {
     output_area.scrollTop = output_area.scrollHeight;
 }
 
-// Nickname will be obtained from the input box until it is set and accepted by the server.
-var nickname = "";
-clearOutputArea();
-output_area.value += "Please enter your nickname below.\n";
-output_area.scrollTop = output_area.scrollHeight;
+var writeNicknamePrompt = function() {
+    // Nickname will be obtained from the input box until it is set and accepted by the server.
+    nickname = "";
+    clearOutputArea();
+    output_area.value += "Please enter your nickname below.\n";
+    output_area.scrollTop = output_area.scrollHeight;
+}
+writeNicknamePrompt();
 
 var sendChannelMessage = function() {
     var message_to_send = input_area.value;
@@ -47,6 +51,16 @@ var sendChannelMessage = function() {
         var Httpreq = new XMLHttpRequest();
         Httpreq.open("GET","/connect?session_id=" + session_id + "&nickname=" + nickname, false);
         Httpreq.send(null);
+        console.log("Received from Node server in response to nickname: " + Httpreq.responseText);
+        var data_from_server = JSON.parse(Httpreq.responseText);
+        console.log("Reply after sending nickname to server: " + data_from_server.status);
+        if (data_from_server.status == "NOT FOUND") {  // Has the connection between the IRC server and the Node client dropped?
+            nickname = "";
+            getSessionID();
+            writeNicknamePrompt();
+            input_area.focus();
+            return;
+        }
         clearOutputArea();
         output_area.value += "Using nickname " + nickname + "\n";
         message_to_send = "";  // No need to send anything else at this point.
@@ -55,6 +69,14 @@ var sendChannelMessage = function() {
         var Httpreq = new XMLHttpRequest();
         Httpreq.open("GET","/send_channel_message?session_id=" + session_id + "&message=" + message_to_send, false);  // This is URL-encoded, fortunately.
         Httpreq.send(null);
+        var data_from_server = JSON.parse(Httpreq.responseText);
+        if (data_from_server.status == "NOT FOUND") {  // Has the connection between the IRC server and the Node client dropped?
+            nickname = "";
+            getSessionId();
+            writeNicknamePrompt();
+            input_area.focus();
+            return;
+        }
         output_area.value += "(" + nickname + "): " + message_to_send + "\n";
         output_area.scrollTop = output_area.scrollHeight;
     }
@@ -65,6 +87,13 @@ var pingNodeServer = function() {
     var Httpreq = new XMLHttpRequest();
     Httpreq.open("GET","/ping?session_id=" + session_id, false);
     Httpreq.send(null);
+    var data_from_server = JSON.parse(Httpreq.responseText);
+    if (data_from_server.status == "NOT FOUND") {  // Has the connection between the IRC server and the Node client dropped?
+        nickname = "";
+        getSessionId();
+        writeNicknamePrompt();
+        input_area.focus();
+    }
     setTimeout (function() { pingNodeServer(); }, 30000);  // Repeat this every 30 seconds.
 }
 
@@ -85,8 +114,7 @@ var screenUpdate = function() {
     setTimeout (function() { screenUpdate(); }, 1000);  // Poll the Node server and update the screen every second.
 }
 
-window.onload = function() {
-    //
+getSessionId = function() {
     // First get the session ID for ourselves.  This is not super high security, but ok enough for a chat.
     var Httpreq = new XMLHttpRequest();
     Httpreq.open("GET","/session_id",false);
@@ -94,7 +122,10 @@ window.onload = function() {
     var data_from_server = JSON.parse(Httpreq.responseText);
     session_id = data_from_server.sessionId;
     console.log("Got session ID: " + session_id);
-    //
+}
+
+window.onload = function() {
+    getSessionId();
     input_area.focus();
     setTimeout (function() { pingNodeServer(); }, 30000);  // Ping the Node server so it can detect if we've died and gone away.
     setTimeout (function() { screenUpdate();   },  1000);  // Poll the Node server and update the screen every second.

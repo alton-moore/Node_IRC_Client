@@ -24,7 +24,8 @@ var checkPings = function() {
     console.log("Checking " + session_id_array.length + " sessions for ping timeouts.");
     for (i=0; i < session_id_array.length; i++) {
         while ((i < session_id_array.length) && ((new Date().getTime() / 1000) - ping_times_array[i] > 75)) {
-            console.log("  Ping timeout for session ID: " + session_id_array[i] + " -- Removing from arrays.");
+            console.log("  Ping timeout for session ID: " + session_id_array[i] + " -- Disconnecting and removing from arrays.");
+            irc_handles_array[i].disconnect();
             session_id_array.splice(i,1);
             ping_times_array.splice(i,1);
             irc_handles_array.splice(i,1);
@@ -92,7 +93,10 @@ app.get('/ping', function(req,res) {
   console.log("Received PING with session ID " + session_id + " from browser client.");
   // Make note of last ping time for this session.
   ping_times_array[session_id_array.indexOf(session_id)] = new Date().getTime() / 1000;  // Set last ping time for this session.
-  res.json({"status": "OK"});
+  if (session_id_array.indexOf(session_id) == -1)
+    res.json({"status": "NOT FOUND"});
+  else
+    res.json({"status": "OK"});
 });
 
 // This sends a message to the channel.
@@ -102,19 +106,37 @@ app.get('/send_channel_message', function(req,res) {
   console.log("Sending to server: " + message_to_send);
   if (session_id_array.indexOf(session_id) > -1)  // Valid session ID passed to us?  This is mainly a security check, in case anyone writes directly to this endpoint.
       irc_handles_array[session_id_array.indexOf(session_id)].say(config_file.ircChannel, message_to_send);
-  res.json({"status": "OK"});
+  if (session_id_array.indexOf(session_id) == -1)
+    res.json({"status": "NOT FOUND"});
+  else
+    res.json({"status": "OK"});
 });
 
 // This connects to the server with a given nickname.
 app.get('/connect', function(req,res) {
   var session_id = req.param('session_id') + "";
   var nickname   = req.param('nickname'  );
+  if (session_id_array.indexOf(session_id) == -1) {
+    res.json({"status": "NOT FOUND"});
+    console.log("Received invalid session ID from browser; returning bad status.");
+    return;
+  }
   console.log("Connecting to server " + config_file.ircServer + " with nickname " + nickname);
   irc_handles_array[session_id_array.indexOf(session_id)] = new irc.Client(config_file.ircServer, nickname, { debug: true, channels: [config_file.ircChannel] });
   push_to_message_queue_array(session_id, "Connected to server " + config_file.ircServer  + ", channel " + config_file.ircChannel);
-  irc_handles_array[session_id_array.indexOf(session_id)].addListener('error', function(message) {
-      console.error('ERROR: %s: %s', message.command, message.args.join(' '));
+  irc_handles_array[session_id_array.indexOf(session_id)].addListener('error', function(message) {  // This adds an error handler of sorts for this connection.
+      console.error('error: %s: %s', message.command, message.args.join(' '));
   });
+  //irc_handles_array[session_id_array.indexOf(session_id)].addListener('ERROR', function(message) {  // This adds an error handler of sorts for this connection.
+  //    console.error('ERROR: %s: %s', message.command, message.args.join(' '));
+  //});
+  //
+  //irc_handles_array[session_id_array.indexOf(session_id)].addListener('end', function(from, message) {
+  //    console.log('"end" event received: <%s> %s', from, message);
+  //});
+  //irc_handles_array[session_id_array.indexOf(session_id)].addListener('close', function(from, message) {
+  //    console.log('"close" event received: <%s> %s', from, message);
+  //});
   //
   irc_handles_array[session_id_array.indexOf(session_id)].addListener('message#blah', function(from, message) {
       console.log('<%s> %s', from, message);
