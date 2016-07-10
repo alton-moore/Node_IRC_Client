@@ -7,6 +7,12 @@
 
 <SCRIPT>
 
+
+// There are basically two states to this program:  Either the nickname is blank, or it's set.
+// If we find our session is gone when calling the server for some reason, we set the nickname
+// to blank and go back to logging into the IRC server.
+
+
 var session_id = "";
 var nickname = "";
 
@@ -46,33 +52,36 @@ writeNicknamePrompt();
 var sendChannelMessage = function() {
     var message_to_send = input_area.value;
     input_area.value = "";  // Blank out the input box.
+    //
     if (nickname == "") {  // If the nickname hasn't been set yet, then use any input from this box to do it.
         nickname = message_to_send;
         var Httpreq = new XMLHttpRequest();
-        Httpreq.open("GET","/connect?session_id=" + session_id + "&nickname=" + nickname, false);
+        Httpreq.open("GET","/connect?nickname=" + nickname, false);
         Httpreq.send(null);
         console.log("Received from Node server in response to nickname: " + Httpreq.responseText);
         var data_from_server = JSON.parse(Httpreq.responseText);
         console.log("Reply after sending nickname to server: " + data_from_server.status);
-        if (data_from_server.status == "NOT FOUND") {  // Has the connection between the IRC server and the Node client dropped?
+        if (data_from_server.status != "OK") {  // Has the connection between the IRC server and the Node client dropped?
+            console.log("Session ID not found when sending nickname; starting a new session.");
             nickname = "";
-            getSessionID();
             writeNicknamePrompt();
             input_area.focus();
             return;
         }
+        session_id = data_from_server.sessionId;
         clearOutputArea();
         output_area.value += "Using nickname " + nickname + "\n";
-        message_to_send = "";  // No need to send anything else at this point.
+        setTimeout (function() { pingNodeServer(); }, 30000);  // Ping the Node server so it can detect if we've died and gone away.
+        setTimeout (function() { screenUpdate();   },  1000);  // Poll the Node server and update the screen every second.
     }
-    if (message_to_send != "") {
+    else {
         var Httpreq = new XMLHttpRequest();
         Httpreq.open("GET","/send_channel_message?session_id=" + session_id + "&message=" + message_to_send, false);  // This is URL-encoded, fortunately.
         Httpreq.send(null);
         var data_from_server = JSON.parse(Httpreq.responseText);
-        if (data_from_server.status == "NOT FOUND") {  // Has the connection between the IRC server and the Node client dropped?
+        if (data_from_server.status != "OK") {  // Has the connection between the IRC server and the Node client dropped?
+            console.log("Session ID not found when sending channel message.");
             nickname = "";
-            getSessionId();
             writeNicknamePrompt();
             input_area.focus();
             return;
@@ -84,15 +93,27 @@ var sendChannelMessage = function() {
 }
 
 var pingNodeServer = function() {
+    if (nickname == "")  // If nickname is blank, then we should be connecting to the server, not pinging it.
+        return;
     var Httpreq = new XMLHttpRequest();
+    console.log("Pinging Node server with session id " + session_id);
     Httpreq.open("GET","/ping?session_id=" + session_id, false);
     Httpreq.send(null);
-    var data_from_server = JSON.parse(Httpreq.responseText);
-    if (data_from_server.status == "NOT FOUND") {  // Has the connection between the IRC server and the Node client dropped?
+    if (Httpreq.responseText == "") {  // Connection to Node dropped or Node exited?
         nickname = "";
-        getSessionId();
         writeNicknamePrompt();
         input_area.focus();
+        console.log("Empty string received while pinging Node; resetting connection.");
+        }
+    else {
+        var data_from_server = JSON.parse(Httpreq.responseText);
+        console.log("  Ping response: " + data_from_server.status);
+        if (data_from_server.status != "OK") {  // Has the connection between the IRC server and the Node client dropped?
+            console.log("Session id not found by Node server when pinging.");
+            nickname = "";
+            writeNicknamePrompt();
+            input_area.focus();
+        }
     }
     setTimeout (function() { pingNodeServer(); }, 30000);  // Repeat this every 30 seconds.
 }
@@ -101,34 +122,31 @@ var screenUpdate = function() {
     var Httpreq = new XMLHttpRequest();
     Httpreq.open("GET","/last_channel_message?session_id=" + session_id,false);
     Httpreq.send(null);
-    var data_from_server = JSON.parse(Httpreq.responseText);
-    while (data_from_server.lastChannelMessage != "") {
-        //console.log(data_from_server.lastChannelMessage);
-        output_area.value += data_from_server.lastChannelMessage + "\n";
-        output_area.scrollTop = output_area.scrollHeight;
-        var Httpreq = new XMLHttpRequest();  // Try again immediately, in case there are more messages.
-        Httpreq.open("GET","/last_channel_message?session_id=" + session_id,false);
-        Httpreq.send(null);
-        data_from_server = JSON.parse(Httpreq.responseText);
+    if (Httpreq.responseText == "") {  // Connection to Node dropped or Node exited?
+        nickname = "";
+        writeNicknamePrompt();
+        input_area.focus();
+        console.log("Empty string received while polling Node; resetting connection.");
         }
+    else {
+        var data_from_server = JSON.parse(Httpreq.responseText);
+        while (data_from_server.lastChannelMessage != "") {
+            //console.log(data_from_server.lastChannelMessage);
+            output_area.value += data_from_server.lastChannelMessage + "\n";
+            output_area.scrollTop = output_area.scrollHeight;
+            var Httpreq = new XMLHttpRequest();  // Try again immediately, in case there are more messages.
+            Httpreq.open("GET","/last_channel_message?session_id=" + session_id,false);
+            Httpreq.send(null);
+            data_from_server = JSON.parse(Httpreq.responseText);
+            }
+    }
     setTimeout (function() { screenUpdate(); }, 1000);  // Poll the Node server and update the screen every second.
 }
 
-getSessionId = function() {
-    // First get the session ID for ourselves.  This is not super high security, but ok enough for a chat.
-    var Httpreq = new XMLHttpRequest();
-    Httpreq.open("GET","/session_id",false);
-    Httpreq.send(null);
-    var data_from_server = JSON.parse(Httpreq.responseText);
-    session_id = data_from_server.sessionId;
-    console.log("Got session ID: " + session_id);
-}
 
 window.onload = function() {
-    getSessionId();
+    console.log("Setting focus to input field.");
     input_area.focus();
-    setTimeout (function() { pingNodeServer(); }, 30000);  // Ping the Node server so it can detect if we've died and gone away.
-    setTimeout (function() { screenUpdate();   },  1000);  // Poll the Node server and update the screen every second.
 }
 </SCRIPT>
 

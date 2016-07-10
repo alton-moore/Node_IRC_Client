@@ -19,6 +19,21 @@ app.listen(config_file.port,function() {
   console.log("Server started on port " + config_file.port);
 });
 
+var deleteClient = function(index) {
+    if (index == -1) {
+        console.log("  Client connection already deleted.");
+    }
+    else {
+        console.log("  Deleting client at index " + index + " with session id " + session_id_array[index]);
+        irc_handles_array[index].disconnect();
+        //
+        session_id_array.splice(   index,1);
+        ping_times_array.splice(   index,1);
+        irc_handles_array.splice(  index,1);
+        message_queue_array.splice(index,1);
+    }
+}
+
 var checkPings = function() {
     // Because each routine should be atomic, we can both check and clean the arrays here without worry.
     console.log("Checking " + session_id_array.length + " sessions for ping timeouts.");
@@ -26,10 +41,7 @@ var checkPings = function() {
         while ((i < session_id_array.length) && ((new Date().getTime() / 1000) - ping_times_array[i] > 75)) {
             console.log("  Ping timeout for session ID: " + session_id_array[i] + " -- Disconnecting and removing from arrays.");
             irc_handles_array[i].disconnect();
-            session_id_array.splice(i,1);
-            ping_times_array.splice(i,1);
-            irc_handles_array.splice(i,1);
-            message_queue_array.splice(i,1);
+            deleteClient(i);
         }
     }
     setTimeout (function() { checkPings(); }, 10000);  // Repeat this every 10 seconds.
@@ -51,18 +63,6 @@ var push_to_message_queue_array = function(session_id, message) {
 app.get('/',function(req,res) {
   console.log("html requested");
   res.sendFile(path.join(__dirname + '/client.html'));
-});
-
-// Return a session ID to the browser for use in future requests.
-app.get('/session_id', function(req,res) {
-  var session_id = Math.random() + "";
-  while (session_id_array.indexOf(session_id) > -1)  // Seesion ID already on file in array?
-    session_id = Math.random();  // Collision unlikely, but put the above check back in soon.
-  session_id_array.push(session_id);  // Create the entry for this browser connection.  Later we should see about reusing old entries.
-  ping_times_array[session_id_array.indexOf(session_id)] = new Date().getTime() / 1000;
-  message_queue_array[session_id_array.indexOf(session_id)] = new Array(0);
-  console.log("Assigned session ID: " + session_id);
-  res.json({"sessionId": session_id});
 });
 
 // This returns the entire config file to the web page so it can use some of the settings.
@@ -94,9 +94,9 @@ app.get('/ping', function(req,res) {
   // Make note of last ping time for this session.
   ping_times_array[session_id_array.indexOf(session_id)] = new Date().getTime() / 1000;  // Set last ping time for this session.
   if (session_id_array.indexOf(session_id) == -1)
-    res.json({"status": "NOT FOUND"});
+    res.json({"status":"NOT FOUND"});
   else
-    res.json({"status": "OK"});
+    res.json({"status":"OK"});
 });
 
 // This sends a message to the channel.
@@ -107,36 +107,38 @@ app.get('/send_channel_message', function(req,res) {
   if (session_id_array.indexOf(session_id) > -1)  // Valid session ID passed to us?  This is mainly a security check, in case anyone writes directly to this endpoint.
       irc_handles_array[session_id_array.indexOf(session_id)].say(config_file.ircChannel, message_to_send);
   if (session_id_array.indexOf(session_id) == -1)
-    res.json({"status": "NOT FOUND"});
+    res.json({"status":"NOT FOUND"});
   else
-    res.json({"status": "OK"});
+    res.json({"status":"OK"});
 });
 
 // This connects to the server with a given nickname.
 app.get('/connect', function(req,res) {
-  var session_id = req.param('session_id') + "";
   var nickname   = req.param('nickname'  );
-  if (session_id_array.indexOf(session_id) == -1) {
-    res.json({"status": "NOT FOUND"});
-    console.log("Received invalid session ID from browser; returning bad status.");
-    return;
-  }
+  // Create a session ID.
+  var session_id = Math.random() + "";
+  while (session_id_array.indexOf(session_id) > -1)  // Seesion ID already on file in array?
+    session_id = Math.random();  // Collision unlikely, but put the above check back in soon.
+  session_id_array.push(session_id);  // Create the entry for this browser connection.  Later we should see about reusing old entries.
+  ping_times_array[session_id_array.indexOf(session_id)] = new Date().getTime() / 1000;
+  message_queue_array[session_id_array.indexOf(session_id)] = new Array(0);
+  console.log("Assigned session ID: " + session_id);
+  //
   console.log("Connecting to server " + config_file.ircServer + " with nickname " + nickname);
   irc_handles_array[session_id_array.indexOf(session_id)] = new irc.Client(config_file.ircServer, nickname, { debug: true, channels: [config_file.ircChannel] });
   push_to_message_queue_array(session_id, "Connected to server " + config_file.ircServer  + ", channel " + config_file.ircChannel);
   irc_handles_array[session_id_array.indexOf(session_id)].addListener('error', function(message) {  // This adds an error handler of sorts for this connection.
       console.error('error: %s: %s', message.command, message.args.join(' '));
   });
-  //irc_handles_array[session_id_array.indexOf(session_id)].addListener('ERROR', function(message) {  // This adds an error handler of sorts for this connection.
-  //    console.error('ERROR: %s: %s', message.command, message.args.join(' '));
-  //});
   //
-  //irc_handles_array[session_id_array.indexOf(session_id)].addListener('end', function(from, message) {
-  //    console.log('"end" event received: <%s> %s', from, message);
-  //});
-  //irc_handles_array[session_id_array.indexOf(session_id)].addListener('close', function(from, message) {
-  //    console.log('"close" event received: <%s> %s', from, message);
-  //});
+  irc_handles_array[session_id_array.indexOf(session_id)].addListener('netError', function(message) {
+      console.error('netError: %s  Zapping client entry for session %s', message, session_id);
+      deleteClient(session_id_array.indexOf(session_id));
+  });
+  irc_handles_array[session_id_array.indexOf(session_id)].addListener('abort', function(message) {
+      console.error('abort: %s  Zapping client entry for session %s', message, session_id);
+      deleteClient(session_id_array.indexOf(session_id));
+  });
   //
   irc_handles_array[session_id_array.indexOf(session_id)].addListener('message#blah', function(from, message) {
       console.log('<%s> %s', from, message);
@@ -166,6 +168,6 @@ app.get('/connect', function(req,res) {
       console.log('%s was kicked from %s by %s: %s', who, channel, by, reason);
   });
   //
-  res.json({"status": "OK"});
+  res.json({"status":"OK","sessionId":session_id});  // Everything went well, so return OK status and newly created session ID.
 });
 

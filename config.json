@@ -3,7 +3,7 @@
 "date"            : "06/19/2016",
 "description"     : "Settings needed for IRC client to connect to a single channel on a single server",
 "port"            : "8081",
-"ircServer"       : "irc.alton-moore.net",
+"ircServer"       : "192.168.1.2",
 "ircChannel"      : "#alton",
 "displayRows"     : "10",
 "displayColumns"  : "80",
