@@ -33,27 +33,20 @@ input_area  = document.getElementById('input_area' );
 output_area = document.getElementById('output_area');
 
 // Initialize the area so next text appears at the bottom of the output area.
-var clearOutputArea = function() {
+var initializeOutputArea = function(message) {  // Multi-line messages should have the lines separated by \n.
     output_area.value = "";
     for (var i=0; config_file.displayRows > i; i++)  // '>' used to quiet my language-sensitive editor.
         output_area.value += '\n';
+    if (message != "")
+        output_area.value += message + '\n';
     output_area.scrollTop = output_area.scrollHeight;
 }
-
-var writeNicknamePrompt = function() {
-    // Nickname will be obtained from the input box until it is set and accepted by the server.
-    nickname = "";
-    clearOutputArea();
-    output_area.value += "Please enter your nickname below.\n";
-    output_area.scrollTop = output_area.scrollHeight;
-}
-writeNicknamePrompt();
 
 var sendChannelMessage = function() {
     var message_to_send = input_area.value;
     input_area.value = "";  // Blank out the input box.
     //
-    if (nickname == "") {  // If the nickname hasn't been set yet, then use any input from this box to do it.
+    if (nickname == "") {  // If the nickname hasn't been set yet, then let's establish the connection to the IRC server now.
         nickname = message_to_send;
         var Httpreq = new XMLHttpRequest();
         Httpreq.open("GET","/connect?nickname=" + nickname, false);
@@ -61,18 +54,16 @@ var sendChannelMessage = function() {
         console.log("Received from Node server in response to nickname: " + Httpreq.responseText);
         var data_from_server = JSON.parse(Httpreq.responseText);
         console.log("Reply after sending nickname to server: " + data_from_server.status);
-        if (data_from_server.status != "OK") {  // Has the connection between the IRC server and the Node client dropped?
-            console.log("Session ID not found when sending nickname; starting a new session.");
+        if (data_from_server.status != "OK") {  // Problem establishing connection?
+            console.log("Problem establishing connection to IRC server.");
             nickname = "";
-            writeNicknamePrompt();
+            initializeOutputArea("Problem connecting to IRC server; please enter your nickname to try again.");
             input_area.focus();
             return;
         }
         session_id = data_from_server.sessionId;
-        clearOutputArea();
-        output_area.value += "Using nickname " + nickname + "\n";
-        setTimeout (function() { pingNodeServer(); }, 30000);  // Ping the Node server so it can detect if we've died and gone away.
-        setTimeout (function() { screenUpdate();   },  1000);  // Poll the Node server and update the screen every second.
+        initializeOutputArea("Using nickname " + nickname);
+        setTimeout (function() { pollForMessages();   },  1000);  // Poll the Node server and update the screen every second.
     }
     else {
         var Httpreq = new XMLHttpRequest();
@@ -82,7 +73,7 @@ var sendChannelMessage = function() {
         if (data_from_server.status != "OK") {  // Has the connection between the IRC server and the Node client dropped?
             console.log("Session ID not found when sending channel message.");
             nickname = "";
-            writeNicknamePrompt();
+            initializeOutputArea("Connection to IRC server lost; please enter your nickname to reconnect.");
             input_area.focus();
             return;
         }
@@ -92,46 +83,27 @@ var sendChannelMessage = function() {
     input_area.focus();
 }
 
-var pingNodeServer = function() {
-    if (nickname == "")  // If nickname is blank, then we should be connecting to the server, not pinging it.
-        return;
-    var Httpreq = new XMLHttpRequest();
-    console.log("Pinging Node server with session id " + session_id);
-    Httpreq.open("GET","/ping?session_id=" + session_id, false);
-    Httpreq.send(null);
-    if (Httpreq.responseText == "") {  // Connection to Node dropped or Node exited?
-        nickname = "";
-        writeNicknamePrompt();
-        input_area.focus();
-        console.log("Empty string received while pinging Node; resetting connection.");
-        }
-    else {
-        var data_from_server = JSON.parse(Httpreq.responseText);
-        console.log("  Ping response: " + data_from_server.status);
-        if (data_from_server.status != "OK") {  // Has the connection between the IRC server and the Node client dropped?
-            console.log("Session id not found by Node server when pinging.");
-            nickname = "";
-            writeNicknamePrompt();
-            input_area.focus();
-        }
-    }
-    setTimeout (function() { pingNodeServer(); }, 30000);  // Repeat this every 30 seconds.
-}
-
-var screenUpdate = function() {
+var pollForMessages = function() {
     var Httpreq = new XMLHttpRequest();
     Httpreq.open("GET","/last_channel_message?session_id=" + session_id,false);
     Httpreq.send(null);
     if (Httpreq.responseText == "") {  // Connection to Node dropped or Node exited?
         nickname = "";
-        writeNicknamePrompt();
+        initializeOutputArea("Connection to IRC server dropped; please enter your nickname to reconnect.");
         input_area.focus();
         console.log("Empty string received while polling Node; resetting connection.");
-        }
+        return;
+    }
     else {
         var data_from_server = JSON.parse(Httpreq.responseText);
+        if (data_from_server.status != "OK") {  // Problem with IRC connection or something?
+            nickname = "";
+            initializeOutputArea("Connection to IRC server dropped; please enter your nickname to reconnect.");
+            input_area.focus();
+            console.log("Problem polling Node (session ID gone).  Reconnecting.");
+            return;
+        }
         while (data_from_server.lastChannelMessage != "") {
-            //console.log(data_from_server.lastChannelMessage);
             output_area.value += data_from_server.lastChannelMessage + "\n";
             output_area.scrollTop = output_area.scrollHeight;
             var Httpreq = new XMLHttpRequest();  // Try again immediately, in case there are more messages.
@@ -140,12 +112,13 @@ var screenUpdate = function() {
             data_from_server = JSON.parse(Httpreq.responseText);
             }
     }
-    setTimeout (function() { screenUpdate(); }, 1000);  // Poll the Node server and update the screen every second.
+    setTimeout (function() { pollForMessages(); }, 1000);  // Poll the Node server and update the screen every second.
 }
 
 
 window.onload = function() {
     console.log("Setting focus to input field.");
+    initializeOutputArea("Please enter your nickname below.");
     input_area.focus();
 }
 </SCRIPT>
